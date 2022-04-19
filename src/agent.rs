@@ -336,8 +336,10 @@ mod tests {
     use crate::error::ContractError;
     use crate::helpers::CwTemplateContract;
     use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-    use cosmwasm_std::{coin, coins, Addr, Empty, Timestamp};
+    use cosmwasm_std::{coin, coins, CosmosMsg, Addr, Empty, Timestamp, WasmMsg, to_binary};
     use cw_multi_test::{App, AppBuilder, Contract, ContractWrapper, Executor};
+    use crate::slots::{Boundary, Interval};
+    use crate::tasks::TaskRequest;
 
     pub fn contract_template() -> Box<dyn Contract<Empty>> {
         let contract = ContractWrapper::new(
@@ -351,6 +353,7 @@ mod tests {
     const AGENT0: &str = "AGENT000";
     const AGENT1: &str = "AGENT001";
     const AGENT2: &str = "AGENT002";
+    const PARTICIPANT: &str = "PARTICIPANT";
     const AGENT1_BENEFICIARY: &str = "AGENT001_BENEFICIARY";
     const ADMIN: &str = "ADMIN";
     const NATIVE_DENOM: &str = "atom";
@@ -363,6 +366,7 @@ mod tests {
                 (100, AGENT1.to_string()),
                 (100, AGENT2.to_string()),
                 (1, AGENT1_BENEFICIARY.to_string()),
+                (999, PARTICIPANT.to_string()),
             ];
             for (amt, address) in accounts.iter() {
                 router
@@ -720,10 +724,51 @@ mod tests {
 
     #[test]
     fn accept_nomination_agent() {
-        // let (mut app, cw_template_contract) = proper_instantiate();
-        // let contract_addr = cw_template_contract.addr();
+        let (mut app, cw_template_contract) = proper_instantiate();
+        let contract_addr = cw_template_contract.addr();
 
-        // TODO:
+        // Register agent
+        let msg1 = ExecuteMsg::RegisterAgent {
+            payable_account_id: Some(Addr::unchecked(AGENT1_BENEFICIARY)),
+        };
+        app.execute_contract(Addr::unchecked(AGENT1), contract_addr.clone(), &msg1, &[])
+            .unwrap();
+
+        let modest_balance = vec![Balance::from(coins(6, "atom"))];
+        let msg_transfer_a_little = ExecuteMsg::MoveBalances {
+            balances: modest_balance,
+            account_id: Addr::unchecked("alice")
+        };
+
+        let task = TaskRequest {
+            interval: Interval::Once,
+            boundary: Boundary { start: None, end: None },
+            stop_on_fail: false,
+            action: CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: contract_addr.clone().into_string(),
+                funds: vec![],
+                msg: to_binary(&msg_transfer_a_little).unwrap(),
+            }),
+            rules: None
+        };
+        let msg_create_task = ExecuteMsg::CreateTask {
+            task
+        };
+
+        let send_funds = coins(6, NATIVE_DENOM);
+        let mut res = app.execute_contract(Addr::unchecked(PARTICIPANT), contract_addr.clone(), &msg_create_task, send_funds.as_ref())
+            .unwrap();
+
+        let task_hash = res.events[1].attributes[2].clone().value;
+        println!("Task hash {}", task_hash);
+
+        // (trying to) Get task by calling query_get_task (see tasks.rs)
+        let msg_query_task = QueryMsg::GetTask { task_hash };
+        // This fails but I cannot seem to find how to query instead of execute
+        res = app.execute_contract(Addr::unchecked(PARTICIPANT), contract_addr.clone(), &msg_query_task, &[]).unwrap();
+        println!("Result {:?}", res);
+
+        // TODO: other stuff to do after figuring out query
         // - agent needs to be in pending list
         // - agent needs to be next in line
         // - agent within threshold of acceptance timeline
