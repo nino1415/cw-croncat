@@ -1199,4 +1199,138 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn proxy_call_several_tasks() -> StdResult<()> {
+        let (mut app, cw_template_contract) = proper_instantiate();
+        let contract_addr = cw_template_contract.addr();
+        let proxy_call_msg = ExecuteMsg::ProxyCall {};
+        let task_id_str =
+            "9c1b6c9d91a5960b9c8580f3606bca18a9ceb8ed628f68a1c7022ef130c5c2d6".to_string();
+
+        // Doing this msg since its the easiest to guarantee success in reply
+        let msg = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: contract_addr.to_string(),
+            msg: to_binary(&ExecuteMsg::WithdrawReward {})?,
+            funds: coins(1, NATIVE_DENOM),
+        });
+
+        let msg2 = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: contract_addr.to_string(),
+            msg: to_binary(&ExecuteMsg::WithdrawReward {})?,
+            funds: coins(2, NATIVE_DENOM),
+        });
+
+        let create_task_msg = ExecuteMsg::CreateTask {
+            task: TaskRequest {
+                interval: Interval::Immediate,
+                boundary: Boundary {
+                    start: None,
+                    end: None,
+                },
+                stop_on_fail: false,
+                actions: vec![Action {
+                    msg,
+                    gas_limit: Some(250_000),
+                }],
+                rules: None,
+            },
+        };
+
+        let create_task_msg2 = ExecuteMsg::CreateTask {
+            task: TaskRequest {
+                interval: Interval::Immediate,
+                boundary: Boundary {
+                    start: None,
+                    end: None,
+                },
+                stop_on_fail: false,
+                actions: vec![Action {
+                    msg: msg2,
+                    gas_limit: Some(250_000),
+                }],
+                rules: None,
+            },
+        };
+
+        // create a task
+        let res = app
+            .execute_contract(
+                Addr::unchecked(ADMIN),
+                contract_addr.clone(),
+                &create_task_msg,
+                &coins(10, NATIVE_DENOM),
+            )
+            .unwrap();
+        // // Assert task hash is returned as part of event attributes
+        // let mut has_created_hash: bool = false;
+        // for e in res.events {
+        //     for a in e.attributes {
+        //         if a.key == "task_hash" && a.value == task_id_str.clone() {
+        //             has_created_hash = true;
+        //         }
+        //     }
+        // }
+        // assert!(has_created_hash);
+
+        // create a second task
+        let res = app
+            .execute_contract(
+                Addr::unchecked(ADMIN),
+                contract_addr.clone(),
+                &create_task_msg2,
+                &coins(10, NATIVE_DENOM),
+            )
+            .unwrap();
+        // // Assert task hash is returned as part of event attributes
+        // let mut has_created_hash: bool = false;
+        // for e in res.events {
+        //     for a in e.attributes {
+        //         if a.key == "task_hash" && a.value == task_id_str.clone() {
+        //             has_created_hash = true;
+        //         }
+        //     }
+        // }
+        // assert!(has_created_hash);
+
+        // quick agent register
+        let msg = ExecuteMsg::RegisterAgent {
+            payable_account_id: Some(Addr::unchecked(AGENT1_BENEFICIARY)),
+        };
+        app.execute_contract(Addr::unchecked(AGENT0), contract_addr.clone(), &msg, &[])
+            .unwrap();
+        app.execute_contract(
+            Addr::unchecked(contract_addr.clone()),
+            contract_addr.clone(),
+            &msg,
+            &[],
+        )
+        .unwrap();
+
+        // might need block advancement?!
+        app.update_block(add_little_time);
+
+        // execute proxy_call
+        let res1 = app
+            .execute_contract(
+                Addr::unchecked(AGENT0),
+                contract_addr.clone(),
+                &proxy_call_msg,
+                &vec![],
+            )
+            .unwrap();
+        
+        // execute second proxy_call
+        let res2 = app
+            .execute_contract(
+                Addr::unchecked(AGENT0),
+                contract_addr.clone(),
+                &proxy_call_msg,
+                &vec![],
+            )
+            .unwrap();
+        
+        Ok(())
+    }
+
 }
