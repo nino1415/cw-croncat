@@ -1319,7 +1319,7 @@ mod tests {
                 &vec![],
             )
             .unwrap();
-        
+
         // execute second proxy_call
         let res2 = app
             .execute_contract(
@@ -1329,8 +1329,151 @@ mod tests {
                 &vec![],
             )
             .unwrap();
-        
+
         Ok(())
     }
 
+    const OWNER: &str = "juno15w7hw4klzl9j2hk4vq7r3vuhz53h3mlzug9q6s";
+    const USER: &str = "juno1qgdwpzngq8wtrd0xamfpr0fse7egrefye6ekuh";
+    const AGENT: &str = "juno1e48ptufsh6yplls6vmy4827uxnxlmpdul0nqkg";
+    const UJUNOX: &str = "ujunox";
+
+    fn mock_app_junox() -> App {
+        AppBuilder::new().build(|router, _, storage| {
+            let accounts: Vec<(u128, String)> = vec![
+                (3_000_000, OWNER.to_string()),
+                (1_000_000, USER.to_string()),
+                (1_000_000, AGENT.to_string()),
+            ];
+            for (amt, address) in accounts.iter() {
+                router
+                    .bank
+                    .init_balance(
+                        storage,
+                        &Addr::unchecked(address),
+                        vec![coin(amt.clone(), UJUNOX.to_string())],
+                    )
+                    .unwrap();
+            }
+        })
+    }
+
+    fn proper_instantiate_junox() -> (App, CwTemplateContract) {
+        let mut app = mock_app_junox();
+        let cw_template_id = app.store_code(contract_template());
+        let owner_addr = Addr::unchecked(OWNER);
+
+        let msg = InstantiateMsg {
+            denom: UJUNOX.to_string(),
+            owner_id: None,
+            agent_nomination_duration: None,
+        };
+        let cw_template_contract_addr = app
+            .instantiate_contract(cw_template_id, owner_addr, &msg, &[], "croncat", None)
+            .unwrap();
+
+        let cw_template_contract = CwTemplateContract(cw_template_contract_addr);
+
+        (app, cw_template_contract)
+    }
+
+    #[test]
+    fn proxy_call_success_staking() -> StdResult<()> {
+        let (mut app, cw_template_contract) = proper_instantiate_junox();
+        let contract_addr = cw_template_contract.addr();
+        let proxy_call_msg = ExecuteMsg::ProxyCall {};
+        let validator = String::from("juno14vhcdsyf83ngsrrqc92kmw8q9xakqjm0ff2dpn");
+        let amount = coin(10000, UJUNOX.to_string());
+        let stake = StakingMsg::Delegate {
+            validator: validator.clone(),
+            amount,
+        };
+        let msg: CosmosMsg = stake.clone().into();
+
+        let create_task_msg = ExecuteMsg::CreateTask {
+            task: TaskRequest {
+                interval: Interval::Immediate,
+                boundary: Boundary {
+                    start: None,
+                    end: None,
+                },
+                stop_on_fail: false,
+                actions: vec![Action {
+                    msg,
+                    gas_limit: Some(150_000),
+                }],
+                rules: None,
+            },
+        };
+
+        let amount2 = coin(20000, UJUNOX.to_string());
+        let stake2 = StakingMsg::Delegate {
+            validator,
+            amount: amount2,
+        };
+        let msg2: CosmosMsg = stake2.clone().into();
+
+        let create_task_msg2 = ExecuteMsg::CreateTask {
+            task: TaskRequest {
+                interval: Interval::Immediate,
+                boundary: Boundary {
+                    start: None,
+                    end: None,
+                },
+                stop_on_fail: false,
+                actions: vec![Action {
+                    msg: msg2,
+                    gas_limit: Some(150_000),
+                }],
+                rules: None,
+            },
+        };
+
+        // create a task
+        app.execute_contract(
+            Addr::unchecked(USER),
+            contract_addr.clone(),
+            &create_task_msg,
+            &coins(100000, UJUNOX.to_string()),
+        )
+        .unwrap();
+
+        // create a second task
+        app.execute_contract(
+            Addr::unchecked(USER),
+            contract_addr.clone(),
+            &create_task_msg2,
+            &coins(100000, UJUNOX.to_string()),
+        )
+        .unwrap();
+
+        // quick agent register
+        let msg = ExecuteMsg::RegisterAgent {
+            payable_account_id: None,
+        };
+        app.execute_contract(Addr::unchecked(AGENT), contract_addr.clone(), &msg, &[])
+            .unwrap();
+
+        // might need block advancement?!
+        app.update_block(add_little_time);
+
+        // execute proxy_call
+        app.execute_contract(
+            Addr::unchecked(AGENT),
+            contract_addr.clone(),
+            &proxy_call_msg,
+            &vec![],
+        )
+        .unwrap();
+
+        // execute proxy_call
+        app.execute_contract(
+            Addr::unchecked(AGENT),
+            contract_addr.clone(),
+            &proxy_call_msg,
+            &vec![],
+        )
+        .unwrap();
+        Ok(())
+    }
 }
