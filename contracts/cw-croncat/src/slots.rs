@@ -205,7 +205,7 @@ impl<'a> CwCroncat<'a> {
             SlotType::Block => self.block_slots.clone(),
             SlotType::Cron => self.time_slots.clone(),
         };
-
+        println!("slot in pop_slot_item: {:?}", slot);
         let mut slot_data = store.may_load(storage, *slot).unwrap()?;
 
         // Get a single task hash, then retrieve task details
@@ -213,16 +213,18 @@ impl<'a> CwCroncat<'a> {
 
         // Need to remove this slot if no hash's left
         if slot_data.is_empty() {
+            println!("clean_slot IS CALLED");
             self.clean_slot(storage, slot, kind);
-        }
-
-        if hash.is_some() {
+        } else {
             store
                 .update(storage, *slot, |_d| -> StdResult<Vec<_>> { Ok(slot_data) })
                 .ok();
+            println!("clean_slot ISN'T CALLED");
+        }
+        println!("12346 in pop_slot_item {:?}", store.load(storage, 12346));
+        if hash.is_some() {
             return hash;
         }
-
         None
     }
 
@@ -234,7 +236,11 @@ impl<'a> CwCroncat<'a> {
             SlotType::Cron => self.time_slots.clone(),
         };
 
+        println!("12346 before {:?}", store.load(storage, 12346));
+        println!("12347 before {:?}", store.load(storage, 12347));
         store.remove(storage, *slot);
+        println!("12346 after {:?}", store.load(storage, 12346));
+        println!("12347 after {:?}", store.load(storage, 12347));
     }
 }
 

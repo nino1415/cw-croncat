@@ -47,6 +47,7 @@ impl<'a> CwCroncat<'a> {
         // get slot items, find the next task hash available
         // if empty slot found, let agent get paid for helping keep house clean
         let slot = self.get_current_slot_items(&env.block, deps.storage);
+        println!("proxy_call: slot {:?}", slot);
         if slot.is_none() {
             self.send_base_agent_reward(deps.storage, agent);
             return Err(ContractError::CustomError {
@@ -54,14 +55,19 @@ impl<'a> CwCroncat<'a> {
             });
         }
         let (slot_id, slot_kind) = slot.unwrap();
+        println!("proxy_call: slot_id {:?}", slot_id.clone());
         let some_hash = self.pop_slot_item(deps.storage, &slot_id, &slot_kind);
+        let store = match slot_kind {
+            SlotType::Block => self.block_slots.clone(),
+            SlotType::Cron => self.time_slots.clone(),
+        };
+        println!("12346 in proxy_call {:?}", store.load(deps.storage, 12346));
         if some_hash.is_none() {
             self.send_base_agent_reward(deps.storage, agent);
             return Err(ContractError::CustomError {
-                val: "No Tasks For Slot".to_string(),
+                val: "No Tasks For Slot2".to_string(),
             });
         }
-
         // Get the task details
         // if no task, exit and reward agent.
         let hash = some_hash.unwrap();
@@ -183,7 +189,7 @@ impl<'a> CwCroncat<'a> {
             .add_attribute("task_hash", task.to_hash())
             // .add_attributes(rule_responses)
             .add_submessages(sub_msgs);
-
+        println!("________________");
         Ok(final_res)
     }
 
@@ -316,7 +322,7 @@ mod tests {
     use cw_multi_test::{App, AppBuilder, Contract, ContractWrapper, Executor};
     // use cw20::Balance;
     use crate::helpers::CwTemplateContract;
-    use cw_croncat_core::msg::{ExecuteMsg, InstantiateMsg, TaskRequest};
+    use cw_croncat_core::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, TaskRequest};
     use cw_croncat_core::types::{Action, Boundary, BoundarySpec, Interval};
 
     pub fn contract_template() -> Box<dyn Contract<Empty>> {
@@ -1262,16 +1268,8 @@ mod tests {
                 &coins(10, NATIVE_DENOM),
             )
             .unwrap();
-        // // Assert task hash is returned as part of event attributes
-        // let mut has_created_hash: bool = false;
-        // for e in res.events {
-        //     for a in e.attributes {
-        //         if a.key == "task_hash" && a.value == task_id_str.clone() {
-        //             has_created_hash = true;
-        //         }
-        //     }
-        // }
-        // assert!(has_created_hash);
+
+        app.update_block(add_little_time);
 
         // create a second task
         let res = app
@@ -1282,16 +1280,6 @@ mod tests {
                 &coins(10, NATIVE_DENOM),
             )
             .unwrap();
-        // // Assert task hash is returned as part of event attributes
-        // let mut has_created_hash: bool = false;
-        // for e in res.events {
-        //     for a in e.attributes {
-        //         if a.key == "task_hash" && a.value == task_id_str.clone() {
-        //             has_created_hash = true;
-        //         }
-        //     }
-        // }
-        // assert!(has_created_hash);
 
         // quick agent register
         let msg = ExecuteMsg::RegisterAgent {
@@ -1329,7 +1317,6 @@ mod tests {
                 &vec![],
             )
             .unwrap();
-
         Ok(())
     }
 
@@ -1438,6 +1425,8 @@ mod tests {
         )
         .unwrap();
 
+        app.update_block(add_little_time);
+
         // create a second task
         app.execute_contract(
             Addr::unchecked(USER),
@@ -1446,6 +1435,12 @@ mod tests {
             &coins(100000, UJUNOX.to_string()),
         )
         .unwrap();
+
+        // query tasks
+        // let res = store
+        //     .query(deps.as_ref(), mock_env(), QueryMsg::GetConfig {})
+        //     .unwrap();
+        // let value: ConfigResponse = from_binary(&res).unwrap();
 
         // quick agent register
         let msg = ExecuteMsg::RegisterAgent {
@@ -1457,14 +1452,11 @@ mod tests {
         // might need block advancement?!
         app.update_block(add_little_time);
 
-        // execute proxy_call
-        app.execute_contract(
-            Addr::unchecked(AGENT),
-            contract_addr.clone(),
-            &proxy_call_msg,
-            &vec![],
-        )
-        .unwrap();
+        // query tasks
+        // let res = store
+        //     .query(deps.as_ref(), mock_env(), QueryMsg::GetConfig {})
+        //     .unwrap();
+        // let value: ConfigResponse = from_binary(&res).unwrap();
 
         // execute proxy_call
         app.execute_contract(
@@ -1474,6 +1466,23 @@ mod tests {
             &vec![],
         )
         .unwrap();
+
+        // query tasks
+        // let res = store
+        //     .query(deps.as_ref(), mock_env(), QueryMsg::GetConfig {})
+        //     .unwrap();
+        // let value: ConfigResponse = from_binary(&res).unwrap();
+
+        // execute proxy_call
+        let res = app
+            .execute_contract(
+                Addr::unchecked(AGENT),
+                contract_addr.clone(),
+                &proxy_call_msg,
+                &vec![],
+            )
+            .unwrap();
+        print!("{:#?}", res);
         Ok(())
     }
 }

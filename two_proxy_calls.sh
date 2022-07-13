@@ -23,8 +23,10 @@ junod tx wasm execute $CONTRACT "$REGISTER_AGENT" --from wallet6 $TXFLAG -y
 
 junod tx wasm execute $CONTRACT "$STAKE" --amount 100000ujunox --from wallet7 $TXFLAG -y
 junod tx wasm execute $CONTRACT "$STAKE2" --amount 100000ujunox --from wallet7 $TXFLAG -y
+junod query wasm contract-state smart $CONTRACT "$GET_TASKS" $NODE --output json
 sleep 10
 junod tx wasm execute $CONTRACT "$PROXY_CALL" --from wallet6 $TXFLAG -y
+junod query wasm contract-state smart $CONTRACT "$GET_TASKS" $NODE --output json
 sleep 10
 junod tx wasm execute $CONTRACT "$PROXY_CALL" --from wallet6 $TXFLAG -y
 #junod tx wasm execute $CONTRACT "$PROXY_CALL" --from wallet5 $TXFLAG -y

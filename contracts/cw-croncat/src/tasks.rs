@@ -292,15 +292,29 @@ impl<'a> CwCroncat<'a> {
             match d {
                 // has some data, simply push new hash
                 Some(data) => {
+                    println!("Previous data: {:#?}", data.clone());
                     let mut s = data;
                     s.push(item.to_hash_vec());
                     Ok(s)
                 }
                 // No data, push new vec & hash
-                None => Ok(vec![item.to_hash_vec()]),
+                None => {
+                    println!("The data is new");
+                    Ok(vec![item.to_hash_vec()])
+                }
             }
         };
 
+        println!("next_id: {:?}", next_id);
+        println!(
+            "block slots before: {:?}",
+            self.block_slots.load(deps.storage, next_id.clone())
+        );
+        //println!("BLOCK SLOTS BEFORE: {:?}", self.block_slots.load(deps.storage, next_id.clone()));
+        println!(
+            "time slots before: {:?}",
+            self.block_slots.load(deps.storage, next_id.clone())
+        );
         // Based on slot kind, put into block or cron slots
         match slot_kind {
             SlotType::Block => {
@@ -312,6 +326,20 @@ impl<'a> CwCroncat<'a> {
                     .update(deps.storage, next_id, update_vec_data)?;
             }
         }
+
+        //println!("all block slots after: {:?}", self.block_slots.keys(None, None, deps.storage));
+        println!(
+            "prev block slots after: {:?}",
+            self.block_slots.load(deps.storage, (next_id - 1).clone())
+        );
+        println!(
+            "block slots after: {:?}",
+            self.block_slots.load(deps.storage, next_id.clone())
+        );
+        println!(
+            "time slots after: {:?}\n-------------",
+            self.block_slots.load(deps.storage, next_id.clone())
+        );
 
         // Add the attached balance into available_balance
         let mut c: Config = self.config.load(deps.storage)?;
